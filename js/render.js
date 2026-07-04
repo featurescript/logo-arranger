@@ -21,11 +21,13 @@ export function draw(ctx, area, placed, opts = {}) {
       p.displayW,
       p.displayH,
     );
-    if (opts.debug) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    if (opts.debug && p.circles) {
       ctx.strokeStyle = 'rgba(91,140,255,0.6)';
-      ctx.stroke();
+      for (const c of p.circles) {
+        ctx.beginPath();
+        ctx.arc(p.x + c.dx, p.y + c.dy, c.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 }

@@ -24,11 +24,15 @@ mass, not by a bounding box.
 
 1. Every area type is rasterized to a binary mask, then a **distance transform**
    gives the distance from any interior point to the nearest border.
-2. Each logo is trimmed to its opaque bounding box; its footprint radius is the
-   radius of a circle with the same opaque-pixel area.
-3. A **relaxation packer** runs repulsion (even spacing + padding), distance-field
-   containment (stay inside the shape), and a centripetal pull (empty space to the
-   border) until the layout settles.
+2. Each logo is trimmed to its opaque bounding box, then its opaque region is
+   decomposed into a **set of collision circles** (greedy cover over a distance
+   transform of the alpha mask) — a wide wordmark collides along its full
+   length, while a round logo's transparent corners stay usable.
+3. A **relaxation packer** runs circle-set repulsion (even spacing + padding),
+   distance-field containment (stay inside the shape), and a centripetal pull
+   (empty space to the border), then a deterministic resolve pass removes any
+   residual overlap. If a set physically can't fit, the base size auto-shrinks
+   until it does — arrangements never overlap.
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full design.
 

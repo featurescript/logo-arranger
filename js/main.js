@@ -1,7 +1,7 @@
 // main.js — wires the UI to the area builder, packer, and renderer.
 import { loadLogo } from './logo.js';
 import { buildArea } from './area.js';
-import { pack, autoFitBaseSize } from './packer.js';
+import { pack, autoFitBaseSize, worstViolation, RESOLVE_TOL } from './packer.js';
 import { draw, hitTest, eventToCanvas, exportPNG } from './render.js';
 
 const $ = (id) => document.getElementById(id);
@@ -59,6 +59,7 @@ async function addLogoFiles(files) {
     }
   }
   renderLogoList();
+  repack(); // arrange immediately so new logos never sit unplaced
 }
 
 function renderLogoList() {
@@ -115,15 +116,15 @@ function fitThumb(c, src, box) {
 }
 
 // ---------------- Layout / pack ----------------
-function computeNodes() {
-  const baseSize = Number($('baseSize').value);
+function computeNodes(baseSize) {
   return state.logos.map((logo) => {
     const maxSide = Math.max(logo.w, logo.h);
     const ds = (baseSize / maxSide) * (logo.scale / 100);
     const prev = state.nodes.get(logo.id);
     return {
       logo,
-      r: logo.footprintRadius * ds,
+      r: logo.boundRadius * ds,
+      circles: logo.circles.map((c) => ({ dx: c.x * ds, dy: c.y * ds, r: c.r * ds })),
       displayW: logo.w * ds,
       displayH: logo.h * ds,
       x: prev?.x,
@@ -132,14 +133,51 @@ function computeNodes() {
   });
 }
 
+const DEFAULT_HINT = 'Drag any logo to nudge it. Re-run “Arrange” to reflow.';
+function setHint(msg) { $('stageHint').textContent = msg; }
+
+// Pack at the requested base size; if the set can't fit without overlap,
+// shrink the base size 10% at a time until it does.
 function repack() {
   if (!state.area || !state.logos.length) { state.placed = []; redraw(); return; }
-  const nodes = computeNodes();
-  pack(nodes, state.area, {
-    padding: Number($('padding').value),
-    borderClearance: Number($('centerPull').value) / 100,
-    iterations: 480,
-  });
+  const padding = Number($('padding').value);
+  const borderClearance = Number($('centerPull').value) / 100;
+  const requested = Number($('baseSize').value);
+  // Cap the starting size near the feasibility estimate — sizes far above it
+  // can never pack and just waste shrink iterations.
+  const estimate = autoFitBaseSize(
+    state.logos.map((l) => ({ maxSide: Math.max(l.w, l.h), footprintRadius: l.footprintRadius, scale: l.scale })),
+    state.area,
+    padding,
+  );
+  let base = Math.min(requested, Math.round(estimate * 1.35));
+  let nodes = null;
+
+  const MAX_TRIES = 12;
+  for (let t = 0; t < MAX_TRIES; t++) {
+    nodes = computeNodes(base);
+    pack(nodes, state.area, { padding, borderClearance, iterations: 380 });
+    const worst = worstViolation(nodes, state.area, padding);
+    if (worst <= RESOLVE_TOL + 0.6) break;
+    // shrink harder when the violation is large
+    base = Math.max(24, Math.round(base * (worst > base * 0.15 ? 0.8 : 0.92)));
+    state.nodes.clear(); // reseed at the smaller size
+    if (base === 24 && t >= MAX_TRIES - 2) break;
+  }
+
+  const finalWorst = worstViolation(nodes, state.area, padding);
+  if (finalWorst > RESOLVE_TOL + 0.6) {
+    // Even the minimum size couldn't separate everything — tell the user
+    // instead of silently showing an overlapping layout.
+    setHint('Area too small for this logo set — enlarge the area or reduce padding/scales.');
+  } else if (base !== requested) {
+    $('baseSize').value = base;
+    $('baseSizeOut').textContent = base;
+    setHint(`Base size auto-reduced to ${base}px so everything fits without overlap.`);
+  } else {
+    setHint(DEFAULT_HINT);
+  }
+
   nodes.forEach((n) => state.nodes.set(n.logo.id, { x: n.x, y: n.y }));
   state.placed = nodes;
   redraw();
@@ -298,3 +336,6 @@ function clampDim(v) { return Math.max(100, Math.min(4000, Number(v) || 800)); }
 
 // ---------------- Init ----------------
 setAreaType('rect');
+
+// Debug/test handle (harmless in production; used by automated checks).
+window.__logoArranger = { state, repack };

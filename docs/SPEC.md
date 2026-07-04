@@ -30,15 +30,21 @@ area, sized by sponsor tier, with transparency treated as empty space.
 - **Area → mask bitmap.** Every area type is rasterized to a binary mask
   (inside/outside) at working resolution. Preset shapes and polygons drawn
   directly; uploaded images use alpha (or luminance for opaque images) as the mask.
-- **Logo → footprint.** Each uploaded logo is drawn to an offscreen canvas; the
-  alpha channel gives a tight opaque bbox and an approximate footprint radius
-  (used for spacing so transparent corners don't reserve space).
+- **Logo → footprint.** Each uploaded logo is drawn to an offscreen canvas and
+  trimmed to its opaque bbox. The opaque region is then decomposed into a set of
+  collision circles (greedy cover over a distance transform of the alpha mask),
+  so a wide wordmark collides along its whole length while transparent corners
+  of round logos stay usable as empty space. Every opaque pixel is guaranteed to
+  be inside some circle (leftovers grow the nearest circle).
 - **Scale.** Logo render size = base size × (scale% / 100). Base size derived from
   the area size and logo count so the set fits.
-- **Pack.** Seed positions inside the mask, then relaxation:
-  repel overlapping footprints (respecting padding), pull loosely toward the area
-  centroid, and constrain every footprint to stay inside the mask. Result: even
-  interior padding, empty space pushed to the border.
+- **Pack.** Seed positions inside the mask, then relaxation over the circle sets:
+  deepest circle-pair penetration (plus padding) repels each node pair, the
+  distance field pushes protruding circles back inside, and a centripetal pull
+  clusters logos centrally. A deterministic resolve loop then removes residual
+  overlap; if the set physically can't fit, the base size auto-shrinks ~10% at a
+  time until it does. Result: zero overlap, even interior padding, empty space
+  pushed to the border.
 - **Edit + export.** Placed logos are draggable on the canvas; export flattens to
   a PNG at chosen resolution.
 
