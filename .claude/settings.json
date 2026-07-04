@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "statusMessage": "Syncing with origin...",
+            "timeout": 30,
+            "command": "git fetch origin --quiet 2>/dev/null; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); behind=$(git rev-list --count HEAD..origin/$b 2>/dev/null); if [ \"${behind:-0}\" -gt 0 ]; then if git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null && git merge --ff-only \"origin/$b\" --quiet 2>/dev/null; then echo \"{\\\"systemMessage\\\":\\\"Synced $b: fast-forwarded $behind commit(s) from origin.\\\"}\"; else echo \"{\\\"systemMessage\\\":\\\"origin/$b is $behind commit(s) ahead but tree not clean or not fast-forwardable - run git pull manually.\\\"}\"; fi; fi; true"
+          }
+        ]
+      }
+    ]
+  }
+}

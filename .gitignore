@@ -1,0 +1,13 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+.vscode/
+.idea/
+
+# logs / scratch
+*.log
+
+# machine-local Claude permission grants
+/.claude/settings.local.json
