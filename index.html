@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logo Arranger — sponsor logo layout tool</title>
+  <meta name="description" content="Arrange sponsor logos in any 2D area, sized by tier, with transparency-aware even spacing." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1>Logo Arranger</h1>
+          <p class="tag">Tier-sized sponsor layout</p>
+        </div>
+      </header>
+
+      <!-- Area -->
+      <section class="panel">
+        <h2>1 · Area</h2>
+        <div class="field">
+          <label for="areaType">Shape</label>
+          <select id="areaType">
+            <option value="rect">Rectangle</option>
+            <option value="circle">Circle</option>
+            <option value="ellipse">Ellipse</option>
+            <option value="polygon">Custom polygon (draw)</option>
+            <option value="mask">Upload mask (image / SVG)</option>
+          </select>
+        </div>
+
+        <div class="row" data-area-group="dims">
+          <div class="field">
+            <label for="areaW">Width</label>
+            <input id="areaW" type="number" min="100" max="4000" value="1200" />
+          </div>
+          <div class="field">
+            <label for="areaH">Height</label>
+            <input id="areaH" type="number" min="100" max="4000" value="800" />
+          </div>
+        </div>
+
+        <div class="field" data-area-group="polygon" hidden>
+          <p class="hint">Click on the stage to add points. Double-click / “Close” to finish.</p>
+          <div class="row">
+            <button class="btn btn-ghost" id="polyClose" type="button">Close shape</button>
+            <button class="btn btn-ghost" id="polyClear" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div class="field" data-area-group="mask" hidden>
+          <label class="filebtn">
+            <input id="maskFile" type="file" accept="image/*" hidden />
+            <span>Choose mask image…</span>
+          </label>
+          <p class="hint">Opaque pixels = fillable area, transparent = outside.</p>
+        </div>
+      </section>
+
+      <!-- Logos -->
+      <section class="panel">
+        <h2>2 · Logos</h2>
+        <label class="filebtn filebtn-primary">
+          <input id="logoFiles" type="file" accept="image/png,image/svg+xml,image/*" multiple hidden />
+          <span>Add logos…</span>
+        </label>
+        <ul id="logoList" class="logo-list"></ul>
+        <p class="hint" id="logoEmpty">No logos yet. Add PNGs with transparency for best results.</p>
+      </section>
+
+      <!-- Layout -->
+      <section class="panel">
+        <h2>3 · Layout</h2>
+        <div class="field">
+          <label for="baseSize">Base size (100% tier) <output id="baseSizeOut">160</output>px</label>
+          <input id="baseSize" type="range" min="24" max="600" value="160" />
+        </div>
+        <div class="field">
+          <label for="padding">Padding <output id="paddingOut">16</output>px</label>
+          <input id="padding" type="range" min="0" max="120" value="16" />
+        </div>
+        <div class="field">
+          <label for="centerPull">Border clearance <output id="centerPullOut">50</output>%</label>
+          <input id="centerPull" type="range" min="0" max="100" value="50" />
+          <p class="hint">Higher = empty space pushed harder to the outer border.</p>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" id="pack" type="button">Arrange</button>
+          <button class="btn btn-ghost" id="autofit" type="button">Auto-fit size</button>
+        </div>
+      </section>
+
+      <!-- Export -->
+      <section class="panel">
+        <h2>4 · Export</h2>
+        <div class="field">
+          <label class="check"><input id="showArea" type="checkbox" checked /> Show area outline (preview only)</label>
+          <label class="check"><input id="whiteBg" type="checkbox" /> White background in export</label>
+        </div>
+        <div class="field">
+          <label for="exportScale">Export scale <output id="exportScaleOut">2</output>×</label>
+          <input id="exportScale" type="range" min="1" max="4" step="1" value="2" />
+        </div>
+        <button class="btn btn-primary" id="download" type="button">Download PNG</button>
+      </section>
+    </aside>
+
+    <!-- ============ STAGE ============ -->
+    <main class="stage">
+      <div class="stage-inner">
+        <canvas id="canvas" width="1200" height="800"></canvas>
+      </div>
+      <div class="stage-hint" id="stageHint">Drag any logo to nudge it. Re-run “Arrange” to reflow.</div>
+    </main>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
