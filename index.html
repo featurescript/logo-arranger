@@ -62,9 +62,27 @@
         </div>
       </section>
 
+      <!-- Tiers -->
+      <section class="panel">
+        <h2>2 · Sponsor tiers</h2>
+        <ul id="tierList" class="tier-list"></ul>
+        <button class="btn btn-ghost btn-block" id="addTier" type="button">+ Add tier</button>
+        <div class="field" style="margin-top:12px">
+          <label for="sizeMode">Tier % means</label>
+          <select id="sizeMode">
+            <option value="area">Visual weight — equal ink area</option>
+            <option value="side">Longest side</option>
+          </select>
+          <p class="hint" id="sizeModeHint">
+            A 100% wide wordmark and a 100% round badge get the same visual
+            weight, so tiers aren’t skewed by logo shape.
+          </p>
+        </div>
+      </section>
+
       <!-- Logos -->
       <section class="panel">
-        <h2>2 · Logos</h2>
+        <h2>3 · Logos</h2>
         <label class="filebtn filebtn-primary">
           <input id="logoFiles" type="file" accept="image/png,image/svg+xml,image/*" multiple hidden />
           <span>Add logos…</span>
@@ -75,7 +93,7 @@
 
       <!-- Layout -->
       <section class="panel">
-        <h2>3 · Layout</h2>
+        <h2>4 · Layout</h2>
         <div class="field">
           <label for="padding">Padding between logos <output id="paddingOut">16</output>px</label>
           <input id="padding" type="range" min="0" max="120" value="16" />
@@ -98,7 +116,7 @@
 
       <!-- Export -->
       <section class="panel">
-        <h2>4 · Export</h2>
+        <h2>5 · Export</h2>
         <div class="field">
           <label class="check"><input id="showArea" type="checkbox" checked /> Show area outline (preview only)</label>
           <label class="check"><input id="whiteBg" type="checkbox" /> White background in export</label>

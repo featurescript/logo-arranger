@@ -178,6 +178,53 @@ output { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 
 }
 .logo-del:hover { color: var(--danger); }
 
+/* Tier list */
+.tier-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.tier-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 7px;
+}
+.tier-color {
+  width: 22px; height: 22px; flex: 0 0 auto;
+  padding: 0; border: 1px solid var(--line); border-radius: 5px;
+  background: transparent; cursor: pointer;
+}
+.tier-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.tier-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+.tier-name {
+  flex: 1; min-width: 0;
+  background: transparent; border: none; color: var(--text);
+  font-size: 12.5px; font-weight: 600; padding: 2px 0; outline: none;
+}
+.tier-name:focus { border-bottom: 1px solid var(--accent); }
+.tier-pct { display: flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
+.tier-pct input {
+  width: 52px; text-align: right;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; color: var(--text); font-size: 12px; padding: 3px 5px; outline: none;
+}
+.tier-pct input:focus { border-color: var(--accent); }
+.logo-del:disabled { opacity: 0.25; cursor: default; }
+.logo-del:disabled:hover { color: var(--muted); }
+.btn-block { width: 100%; }
+
+.logo-tier {
+  flex: 0 0 auto;
+  max-width: 116px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 4px 5px;
+  font-size: 11.5px;
+  outline: none;
+}
+.logo-tier:focus { border-color: var(--accent); }
+
 /* ---------------- Stage ---------------- */
 .stage {
   position: relative;

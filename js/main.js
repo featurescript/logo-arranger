@@ -1,7 +1,7 @@
 // main.js — wires the UI to the area builder, packer, and renderer.
 import { loadLogo } from './logo.js';
 import { buildArea } from './area.js';
-import { pack, spread, autoFitBaseSize, worstViolation, RESOLVE_TOL } from './packer.js';
+import { pack, spread, balance, autoFitBaseSize, worstViolation, RESOLVE_TOL } from './packer.js';
 import { draw, hitTest, eventToCanvas, exportPNG } from './render.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +19,22 @@ const state = {
   drag: null,
   seed: 1,
   effectiveBase: 0,
+  tiers: [
+    { id: 'tier-p', name: 'Platinum', pct: 300, color: '#c6d4e8' },
+    { id: 'tier-g', name: 'Gold', pct: 200, color: '#e3b341' },
+    { id: 'tier-s', name: 'Silver', pct: 150, color: '#a9b1bd' },
+    { id: 'tier-b', name: 'Bronze', pct: 100, color: '#cd7f4b' },
+  ],
 };
+let tierSeq = 0;
+
+// The default tier for newly added logos: the smallest %, i.e. the base tier.
+function defaultTier() {
+  return state.tiers.reduce((lo, t) => (t.pct < lo.pct ? t : lo), state.tiers[0]);
+}
+function tierOf(logo) {
+  return state.tiers.find((t) => t.id === logo.tierId) || defaultTier();
+}
 
 // ---------------- Area ----------------
 function rebuildArea() {
@@ -82,18 +97,23 @@ function renderLogoList() {
     name.textContent = logo.name;
     name.title = logo.name;
 
-    const scaleWrap = document.createElement('span');
-    scaleWrap.className = 'logo-scale-wrap';
-    const scaleIn = document.createElement('input');
-    scaleIn.type = 'number';
-    scaleIn.min = '10'; scaleIn.max = '1000'; scaleIn.step = '10';
-    scaleIn.value = logo.scale;
-    scaleIn.addEventListener('change', () => {
-      logo.scale = Math.max(10, Math.min(1000, Number(scaleIn.value) || 100));
-      scaleIn.value = logo.scale;
+    const tier = tierOf(logo);
+    logo.tierId = tier.id;
+    const tierPick = document.createElement('select');
+    tierPick.className = 'logo-tier';
+    tierPick.style.borderColor = tier.color;
+    state.tiers.forEach((t) => {
+      const o = document.createElement('option');
+      o.value = t.id;
+      o.textContent = `${t.name} · ${t.pct}%`;
+      if (t.id === logo.tierId) o.selected = true;
+      tierPick.appendChild(o);
+    });
+    tierPick.addEventListener('change', () => {
+      logo.tierId = tierPick.value;
+      tierPick.style.borderColor = tierOf(logo).color;
       arrange();
     });
-    scaleWrap.append(scaleIn, document.createTextNode('%'));
 
     const del = document.createElement('button');
     del.className = 'logo-del';
@@ -106,10 +126,81 @@ function renderLogoList() {
       arrange();
     });
 
-    li.append(thumb, name, scaleWrap, del);
+    li.append(thumb, name, tierPick, del);
     list.appendChild(li);
   });
 }
+
+// ---------------- Tier editor ----------------
+function renderTierList() {
+  const list = $('tierList');
+  list.innerHTML = '';
+  state.tiers.forEach((tier) => {
+    const li = document.createElement('li');
+    li.className = 'tier-item';
+
+    const swatch = document.createElement('input');
+    swatch.type = 'color';
+    swatch.className = 'tier-color';
+    swatch.value = tier.color;
+    swatch.title = 'Tier colour';
+    swatch.addEventListener('input', () => { tier.color = swatch.value; renderLogoList(); });
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'tier-name';
+    name.value = tier.name;
+    name.addEventListener('change', () => {
+      tier.name = name.value.trim() || 'Tier';
+      name.value = tier.name;
+      renderLogoList();
+    });
+
+    const pctWrap = document.createElement('span');
+    pctWrap.className = 'tier-pct';
+    const pct = document.createElement('input');
+    pct.type = 'number';
+    pct.min = '10'; pct.max = '1000'; pct.step = '10';
+    pct.value = tier.pct;
+    pct.addEventListener('change', () => {
+      tier.pct = Math.max(10, Math.min(1000, Number(pct.value) || 100));
+      pct.value = tier.pct;
+      renderLogoList();
+      arrange();
+    });
+    pctWrap.append(pct, document.createTextNode('%'));
+
+    const del = document.createElement('button');
+    del.className = 'logo-del';
+    del.innerHTML = '&times;';
+    del.title = 'Remove tier';
+    del.disabled = state.tiers.length <= 1;
+    del.addEventListener('click', () => {
+      if (state.tiers.length <= 1) return;
+      state.tiers = state.tiers.filter((t) => t !== tier);
+      // Reassign any logos that pointed at the removed tier.
+      const fallback = defaultTier();
+      state.logos.forEach((l) => { if (l.tierId === tier.id) l.tierId = fallback.id; });
+      renderTierList();
+      renderLogoList();
+      arrange();
+    });
+
+    li.append(swatch, name, pctWrap, del);
+    list.appendChild(li);
+  });
+}
+
+$('addTier').addEventListener('click', () => {
+  state.tiers.push({
+    id: `tier-new-${tierSeq++}`,
+    name: `Tier ${state.tiers.length + 1}`,
+    pct: 100,
+    color: '#7c8aa5',
+  });
+  renderTierList();
+  renderLogoList();
+});
 
 function fitThumb(c, src, box) {
   const s = Math.min(box / src.width, box / src.height);
@@ -119,9 +210,26 @@ function fitThumb(c, src, box) {
 
 // ---------------- Layout / pack ----------------
 function computeNodes(baseSize) {
+  const mode = $('sizeMode').value;
   return state.logos.map((logo) => {
     const maxSide = Math.max(logo.w, logo.h);
-    const ds = (baseSize / maxSide) * (logo.scale / 100);
+    const k = tierOf(logo).pct / 100;
+    let ds;
+    if (mode === 'area') {
+      // Scale so every logo at the same tier covers the same INK area. A wide
+      // wordmark and a round badge then read as equally prominent, instead of
+      // the badge dominating just because its bounding box is square.
+      const inkArea = Math.max(1, logo.opaqueFrac * logo.w * logo.h);
+      ds = (baseSize * k) / Math.sqrt(inkArea);
+      // Guard against absurd geometry only — a hairline logo has almost no ink
+      // area, so equal-ink scaling alone would stretch it past the canvas. Cap
+      // by the area's own size rather than the base, otherwise wide wordmarks
+      // get throttled below their fair share and the tier bias returns.
+      const maxAllowed = Math.max(state.area.width, state.area.height) * 0.98;
+      ds = Math.min(ds, maxAllowed / maxSide);
+    } else {
+      ds = (baseSize / maxSide) * k;
+    }
     const prev = state.nodes.get(logo.id);
     return {
       logo,
@@ -177,11 +285,7 @@ function repack() {
   const cap = Number($('baseSize').value); // user-set upper bound
   const seed = state.seed;
 
-  const estimate = autoFitBaseSize(
-    state.logos.map((l) => ({ maxSide: Math.max(l.w, l.h), footprintRadius: l.footprintRadius, scale: l.scale })),
-    state.area,
-    padding,
-  );
+  const estimate = startingEstimate(padding);
 
   let lo = null;                             // largest size known to fit
   let hi = null;                             // smallest size known to fail
@@ -239,6 +343,9 @@ function repack() {
     spread(nodes, state.area, padding, padding + meanR * k, { margin, seed, iterations: 170 });
     if (nodes.some((n, i) => n.x !== before[i].x || n.y !== before[i].y)) break;
   }
+  // Then even the gaps out — spreading fills the space, balancing makes the
+  // spacing look deliberate rather than wherever the solver happened to stop.
+  balance(nodes, state.area, padding, { margin, seed, iterations: 90 });
 
   state.effectiveBase = finalRun.base;
   const fill = coveragePercent(nodes);
@@ -251,6 +358,29 @@ function repack() {
   nodes.forEach((n) => state.nodes.set(n.logo.id, { x: n.x, y: n.y }));
   state.placed = nodes;
   redraw();
+}
+
+// Where to begin the size search. Only a starting point — the grow/bisect
+// search corrects a bad guess, it just costs an extra probe or two.
+function startingEstimate(padding) {
+  if ($('sizeMode').value === 'area') {
+    // ink_i = (base * k_i)^2, so base = sqrt(usable / sum(k^2)).
+    let areaPx = 0;
+    for (const v of state.area.mask) areaPx += v;
+    areaPx /= state.area.scale * state.area.scale;
+    const sumK2 = state.logos.reduce((s, l) => s + (tierOf(l).pct / 100) ** 2, 0);
+    if (!sumK2 || !areaPx) return 160;
+    return Math.max(8, Math.round(Math.sqrt((areaPx * 0.5) / sumK2)));
+  }
+  return autoFitBaseSize(
+    state.logos.map((l) => ({
+      maxSide: Math.max(l.w, l.h),
+      footprintRadius: l.footprintRadius,
+      scale: tierOf(l).pct,
+    })),
+    state.area,
+    padding,
+  );
 }
 
 // Share of the area's usable space taken up by opaque logo footprint.
@@ -388,6 +518,13 @@ $('polyClose').addEventListener('click', closePolygon);
 $('polyClear').addEventListener('click', () => { state.spec.polygon = []; state.polyClosed = false; rebuildArea(); });
 $('maskFile').addEventListener('change', (e) => { if (e.target.files[0]) loadMask(e.target.files[0]); });
 $('logoFiles').addEventListener('change', (e) => addLogoFiles([...e.target.files]));
+$('sizeMode').addEventListener('change', () => {
+  $('sizeModeHint').textContent = $('sizeMode').value === 'area'
+    ? 'A 100% wide wordmark and a 100% round badge get the same visual weight, so tiers aren’t skewed by logo shape.'
+    : 'Tier % sets each logo’s longest side. Compact logos will look heavier than wide ones at the same tier.';
+  state.nodes.clear();
+  arrange();
+});
 
 bindSlider('baseSize', 'baseSizeOut', arrange);
 bindSlider('padding', 'paddingOut', arrange);
@@ -425,6 +562,7 @@ function arrange(job) {
 }
 
 // ---------------- Init ----------------
+renderTierList();
 setAreaType('rect');
 
 // Debug/test handle (harmless in production; used by automated checks).

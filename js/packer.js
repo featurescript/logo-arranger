@@ -113,6 +113,98 @@ export function spread(nodes, area, padding, target, opts = {}) {
   return nodes;
 }
 
+/**
+ * Even out the spacing. Packing alone only guarantees "nothing overlaps", so
+ * leftover room lands wherever the relaxation happened to stop — one pair ends
+ * up nearly touching while another has a huge gap. This pass measures the
+ * actual clearance between neighbouring logos and pulls every gap toward their
+ * shared mean, which is what makes the padding read as consistent.
+ *
+ * Reverts to the incoming layout if the result can't be re-resolved, so it can
+ * never introduce overlap.
+ */
+export function balance(nodes, area, padding, opts = {}) {
+  const n = nodes.length;
+  if (n < 3) return nodes;
+  const margin = opts.margin ?? 0;
+  const iterations = opts.iterations ?? 90;
+  const neighbours = opts.neighbours ?? 3;
+  const rng = makeRng(opts.seed ?? 11);
+  const snapshot = nodes.map((nd) => ({ x: nd.x, y: nd.y }));
+
+  for (let it = 0; it < iterations; it++) {
+    // Nearest-neighbour graph, rebuilt each step since positions move.
+    const pairs = [];
+    const seen = new Set();
+    for (let i = 0; i < n; i++) {
+      const gaps = [];
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        const s = separation(nodes[i], nodes[j]);
+        if (s.gap < Infinity) gaps.push({ j, ...s });
+      }
+      gaps.sort((a, b) => a.gap - b.gap);
+      for (const g of gaps.slice(0, neighbours)) {
+        const key = i < g.j ? `${i}:${g.j}` : `${g.j}:${i}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pairs.push({ i, j: g.j, gap: g.gap, ux: g.ux, uy: g.uy });
+      }
+    }
+    if (!pairs.length) break;
+
+    const mean = pairs.reduce((s, p) => s + p.gap, 0) / pairs.length;
+    const target = Math.max(padding, mean);
+    const step = 0.25 * Math.max(0.3, 1 - it / iterations);
+
+    for (const p of pairs) {
+      // positive error = too far apart, pull together; negative = push apart
+      const err = (p.gap - target) * step * 0.5;
+      nodes[p.i].x += p.ux * err; nodes[p.i].y += p.uy * err;
+      nodes[p.j].x -= p.ux * err; nodes[p.j].y -= p.uy * err;
+    }
+    for (const nd of nodes) containNode(nd, area, margin, 2);
+  }
+
+  resolve(nodes, area, padding, margin, 400, rng);
+  if (worstViolation(nodes, area, padding, margin) > RESOLVE_TOL) {
+    nodes.forEach((nd, i) => { nd.x = snapshot[i].x; nd.y = snapshot[i].y; });
+    return nodes;
+  }
+  return nodes;
+}
+
+/**
+ * Closest clearance between two nodes' footprints: min over circle pairs of
+ * (centre distance - both radii). Negative means they interpenetrate.
+ * ux/uy is the unit vector from a toward b along that closest pair.
+ */
+export function separation(a, b) {
+  let best = Infinity, ux = 0, uy = 0;
+  const ga = clustersOf(a), gb = clustersOf(b);
+  for (const ca of ga) {
+    const gax = a.x + ca.cx, gay = a.y + ca.cy;
+    for (const cbG of gb) {
+      const gdx = b.x + cbG.cx - gax, gdy = b.y + cbG.cy - gay;
+      // cluster clearance lower bound — skip if it can't beat the best so far
+      if (Math.hypot(gdx, gdy) - ca.r - cbG.r >= best) continue;
+      for (const cA of ca.items) {
+        const ax = a.x + cA.dx, ay = a.y + cA.dy;
+        for (const cB of cbG.items) {
+          const dx = b.x + cB.dx - ax, dy = b.y + cB.dy - ay;
+          const d = Math.hypot(dx, dy);
+          const s = d - cA.r - cB.r;
+          if (s < best) {
+            best = s;
+            if (d > 1e-4) { ux = dx / d; uy = dy / d; }
+          }
+        }
+      }
+    }
+  }
+  return { gap: best, ux, uy };
+}
+
 // Deterministic position-based solver: repeatedly fix the worst violation
 // (pair penetration or containment) until everything satisfies the model.
 export function resolve(nodes, area, padding, margin = 0, maxPasses = 500, rng = makeRng(3)) {
