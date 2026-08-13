@@ -4,8 +4,8 @@
 // circular logo's transparent corners stay usable as empty space.
 
 const ALPHA_THRESHOLD = 12; // 0–255; below this a pixel counts as transparent
-const COVER_GRID = 96;      // longest side of the downsampled mask used for circle cover
-const MAX_CIRCLES = 64;     // cap per logo
+const COVER_GRID = 128;     // longest side of the downsampled mask used for circle cover
+const MAX_CIRCLES = 56;     // cap per logo
 
 let uid = 0;
 
@@ -153,26 +153,28 @@ function computeCircles(canvas, w, h) {
       d[y * gw + x] = Math.min(d[y * gw + x], at(x + 1, y) + A, at(x, y + 1) + A, at(x + 1, y + 1) + B, at(x - 1, y + 1) + B);
     }
 
-  // Greedy cover, deepest cells first. A cell counts as covered only when it is
-  // truly inside a circle, so the collision shape can never miss opaque pixels.
+  // Greedy cover, deepest cells first. Visiting cells in one pre-sorted pass
+  // keeps this O(N log N) instead of rescanning the whole grid per circle.
+  // A cell counts as covered only when it truly falls inside a placed circle,
+  // so the collision shape can never miss opaque pixels.
+  const order = [];
+  for (let p = 0; p < gw * gh; p++) if (opaque[p]) order.push(p);
+  order.sort((a, b) => d[b] - d[a]);
+
   const covered = new Uint8Array(gw * gh);
   const circles = [];
   let remaining = opaqueCount;
 
-  while (circles.length < MAX_CIRCLES && remaining > 0) {
-    // deepest uncovered opaque cell
-    let best = -1, bestD = 0;
-    for (let p = 0; p < gw * gh; p++) {
-      if (opaque[p] && !covered[p] && d[p] > bestD) { bestD = d[p]; best = p; }
-    }
-    if (best < 0) break;
-    const bx = best % gw, by = Math.floor(best / gw);
-    // Radius: at least the local inscribed radius, padded so the circle also
-    // covers a ring of neighbors (keeps thin strokes from needing 100s of circles).
-    const r = Math.max(bestD, 1.5);
+  for (const seed of order) {
+    if (circles.length >= MAX_CIRCLES || remaining === 0) break;
+    if (covered[seed]) continue;
+    const bx = seed % gw, by = Math.floor(seed / gw);
+    // Radius: the local inscribed radius, with a floor so thin strokes don't
+    // demand hundreds of circles.
+    const r = Math.max(d[seed], 1.2);
     circles.push({ gx: bx + 0.5, gy: by + 0.5, gr: r });
 
-    const cover = r + 0.5; // honest: only cells the circle actually reaches
+    const cover = r; // honest: only cells the circle actually reaches
     const x0 = Math.max(0, Math.floor(bx - cover)), x1 = Math.min(gw - 1, Math.ceil(bx + cover));
     const y0 = Math.max(0, Math.floor(by - cover)), y1 = Math.min(gh - 1, Math.ceil(by + cover));
     for (let y = y0; y <= y1; y++)
@@ -203,11 +205,12 @@ function computeCircles(canvas, w, h) {
   if (!circles.length) circles.push({ gx: gw / 2, gy: gh / 2, gr: Math.max(gw, gh) / 2 });
 
   // Convert to trimmed-source px relative to the canvas center. Pad each radius
-  // by 3/4 of a cell so grid quantization (cell corners, chamfer-vs-euclidean
-  // error) can never shave the true opaque edge.
+  // by 0.6 of a cell so grid quantization (cell corners, chamfer-vs-euclidean
+  // error) can never shave the true opaque edge. The grid is fine enough that
+  // this costs well under a display pixel of extra spacing.
   return circles.map((c) => ({
     x: c.gx * cell - w / 2,
     y: c.gy * cell - h / 2,
-    r: (c.gr + 0.75) * cell,
+    r: (c.gr + 0.6) * cell,
   }));
 }

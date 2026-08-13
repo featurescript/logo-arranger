@@ -36,15 +36,20 @@ area, sized by sponsor tier, with transparency treated as empty space.
   so a wide wordmark collides along its whole length while transparent corners
   of round logos stay usable as empty space. Every opaque pixel is guaranteed to
   be inside some circle (leftovers grow the nearest circle).
-- **Scale.** Logo render size = base size × (scale% / 100). Base size derived from
-  the area size and logo count so the set fits.
-- **Pack.** Seed positions inside the mask, then relaxation over the circle sets:
-  deepest circle-pair penetration (plus padding) repels each node pair, the
-  distance field pushes protruding circles back inside, and a centripetal pull
-  clusters logos centrally. A deterministic resolve loop then removes residual
-  overlap; if the set physically can't fit, the base size auto-shrinks ~10% at a
-  time until it does. Result: zero overlap, even interior padding, empty space
-  pushed to the border.
+- **Scale.** Logo render size = base size × (scale% / 100). The base size is not
+  fixed by the user: Arrange **searches for the largest base size that packs
+  cleanly** (grow, then bisect, trying several seed layouts per size). The
+  slider is only an upper bound. This is what makes the arrangement fill the
+  area instead of settling for the first size that fits.
+- **Pack.** Seed positions inside the mask (rows for wordmark-heavy sets, spiral
+  otherwise), then relaxation over the circle sets: deepest circle-pair
+  penetration (plus padding) repels each node pair, the distance field pushes
+  protruding circles back inside, and a compaction pull gathers the set early
+  but **anneals to zero** so separation can settle — a failed pack then means
+  "genuinely doesn't fit" rather than "the solver stalled". A deterministic
+  resolve loop removes residual overlap, and a spread pass shares leftover
+  space out so gaps stay even. Result: zero overlap, even interior padding, and
+  an explicit edge margin at the outer border.
 - **Edit + export.** Placed logos are draggable on the canvas; export flattens to
   a PNG at chosen resolution.
 

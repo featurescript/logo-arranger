@@ -12,7 +12,10 @@ mass, not by a bounding box.
 - **Alpha-footprint packing** — each logo's opaque area (read from its alpha
   channel) drives spacing, so circular/irregular logos space evenly.
 - **Per-logo % scale** for tiers — e.g. platinum 300%, bronze 100%.
-- **User-adjustable padding** kept consistent across the interior.
+- **Fills the area** — Arrange grows the logos to the largest size that still
+  packs cleanly, rather than settling for the first size that happens to fit.
+- **User-adjustable padding** kept consistent across the interior, plus a
+  separate edge margin for the outer border.
 - **Any 2D area** — rectangle, circle, ellipse, a custom-drawn polygon, or an
   uploaded mask image/SVG (opaque = fillable, transparent = outside).
 - **Empty space to the border** — a border-clearance control clusters logos in
@@ -28,11 +31,14 @@ mass, not by a bounding box.
    decomposed into a **set of collision circles** (greedy cover over a distance
    transform of the alpha mask) — a wide wordmark collides along its full
    length, while a round logo's transparent corners stay usable.
-3. A **relaxation packer** runs circle-set repulsion (even spacing + padding),
-   distance-field containment (stay inside the shape), and a centripetal pull
-   (empty space to the border), then a deterministic resolve pass removes any
-   residual overlap. If a set physically can't fit, the base size auto-shrinks
-   until it does — arrangements never overlap.
+3. A **relaxation packer** runs circle-set repulsion (even spacing + padding)
+   and distance-field containment (stay inside the shape), seeded either from
+   rows (best for wordmarks) or a spiral, then a deterministic resolve pass
+   removes any residual overlap.
+4. **Arrange searches for the largest size that fits** — it grows the logos
+   while they still pack, then bisects to find the maximum, trying several
+   starting layouts at each size. The "Max logo size" slider is only an upper
+   bound; the app fills the area up to it.
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full design.
 

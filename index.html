@@ -77,21 +77,22 @@
       <section class="panel">
         <h2>3 · Layout</h2>
         <div class="field">
-          <label for="baseSize">Base size (100% tier) <output id="baseSizeOut">160</output>px</label>
-          <input id="baseSize" type="range" min="24" max="600" value="160" />
-        </div>
-        <div class="field">
-          <label for="padding">Padding <output id="paddingOut">16</output>px</label>
+          <label for="padding">Padding between logos <output id="paddingOut">16</output>px</label>
           <input id="padding" type="range" min="0" max="120" value="16" />
         </div>
         <div class="field">
-          <label for="centerPull">Border clearance <output id="centerPullOut">50</output>%</label>
-          <input id="centerPull" type="range" min="0" max="100" value="50" />
-          <p class="hint">Higher = empty space pushed harder to the outer border.</p>
+          <label for="edgeMargin">Edge margin <output id="edgeMarginOut">20</output>px</label>
+          <input id="edgeMargin" type="range" min="0" max="150" value="20" />
+          <p class="hint">Empty border kept clear around the whole arrangement.</p>
+        </div>
+        <div class="field">
+          <label for="baseSize">Max logo size (100% tier) <output id="baseSizeOut">600</output>px</label>
+          <input id="baseSize" type="range" min="24" max="600" value="600" />
+          <p class="hint">Arrange grows logos to the largest size that still fits. Lower this only to cap them.</p>
         </div>
         <div class="row">
           <button class="btn btn-primary" id="pack" type="button">Arrange</button>
-          <button class="btn btn-ghost" id="autofit" type="button">Auto-fit size</button>
+          <button class="btn btn-ghost" id="shuffle" type="button">Shuffle</button>
         </div>
       </section>
 

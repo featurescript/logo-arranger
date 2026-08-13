@@ -1,7 +1,7 @@
 // main.js — wires the UI to the area builder, packer, and renderer.
 import { loadLogo } from './logo.js';
 import { buildArea } from './area.js';
-import { pack, autoFitBaseSize, worstViolation, RESOLVE_TOL } from './packer.js';
+import { pack, spread, autoFitBaseSize, worstViolation, RESOLVE_TOL } from './packer.js';
 import { draw, hitTest, eventToCanvas, exportPNG } from './render.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +17,8 @@ const state = {
   spec: { type: 'rect', width: 1200, height: 800, polygon: [], maskCanvas: null },
   polyClosed: false,
   drag: null,
+  seed: 1,
+  effectiveBase: 0,
 };
 
 // ---------------- Area ----------------
@@ -59,7 +61,7 @@ async function addLogoFiles(files) {
     }
   }
   renderLogoList();
-  repack(); // arrange immediately so new logos never sit unplaced
+  arrange(); // arrange immediately so new logos never sit unplaced
 }
 
 function renderLogoList() {
@@ -89,7 +91,7 @@ function renderLogoList() {
     scaleIn.addEventListener('change', () => {
       logo.scale = Math.max(10, Math.min(1000, Number(scaleIn.value) || 100));
       scaleIn.value = logo.scale;
-      repack();
+      arrange();
     });
     scaleWrap.append(scaleIn, document.createTextNode('%'));
 
@@ -101,7 +103,7 @@ function renderLogoList() {
       state.logos = state.logos.filter((l) => l !== logo);
       state.nodes.delete(logo.id);
       renderLogoList();
-      repack();
+      arrange();
     });
 
     li.append(thumb, name, scaleWrap, del);
@@ -136,64 +138,136 @@ function computeNodes(baseSize) {
 const DEFAULT_HINT = 'Drag any logo to nudge it. Re-run “Arrange” to reflow.';
 function setHint(msg) { $('stageHint').textContent = msg; }
 
-// Pack at the requested base size; if the set can't fit without overlap,
-// shrink the base size 10% at a time until it does.
+const FIT_TOL = RESOLVE_TOL + 0.4;
+const SEARCH_ITER = 260; // relaxation steps while searching for the size
+const FINAL_ITER = 460;  // steps for the winning size
+
+// Pack at `base`, trying several starting layouts. Relaxation only finds a
+// local optimum, so a single failed attempt does NOT mean the size is too big —
+// retrying from a different seed routinely succeeds where one attempt failed.
+// Returns as soon as an attempt fits, else the closest near-miss.
+function attempt(base, padding, margin, iterations, seed, tries = 3) {
+  const plans = [
+    { strategy: 'shelf', seed },
+    { strategy: 'spiral', seed },
+    { strategy: 'spiral', seed: seed + 977 },
+    { strategy: 'shelf', seed: seed + 331 },
+  ].slice(0, Math.max(1, tries));
+
+  let bestMiss = null;
+  for (const plan of plans) {
+    state.nodes.clear(); // always start this attempt from the chosen seeding
+    const nodes = computeNodes(base);
+    pack(nodes, state.area, { padding, margin, iterations, ...plan });
+    const worst = worstViolation(nodes, state.area, padding, margin);
+    if (worst <= FIT_TOL) return { nodes, base, worst, ok: true };
+    if (!bestMiss || worst < bestMiss.worst) bestMiss = { nodes, base, worst, ok: false };
+  }
+  return bestMiss;
+}
+
+// Find the LARGEST size that packs cleanly: grow while it fits, then bisect
+// between the last size that fit and the first that didn't. Growing is the
+// whole point — a size that fits easily should be pushed up until the area is
+// actually full, not accepted as-is.
 function repack() {
   if (!state.area || !state.logos.length) { state.placed = []; redraw(); return; }
   const padding = Number($('padding').value);
-  const borderClearance = Number($('centerPull').value) / 100;
-  const requested = Number($('baseSize').value);
-  // Cap the starting size near the feasibility estimate — sizes far above it
-  // can never pack and just waste shrink iterations.
+  const margin = Number($('edgeMargin').value);
+  const cap = Number($('baseSize').value); // user-set upper bound
+  const seed = state.seed;
+
   const estimate = autoFitBaseSize(
     state.logos.map((l) => ({ maxSide: Math.max(l.w, l.h), footprintRadius: l.footprintRadius, scale: l.scale })),
     state.area,
     padding,
   );
-  let base = Math.min(requested, Math.round(estimate * 1.35));
-  let nodes = null;
 
-  const MAX_TRIES = 12;
-  for (let t = 0; t < MAX_TRIES; t++) {
-    nodes = computeNodes(base);
-    pack(nodes, state.area, { padding, borderClearance, iterations: 380 });
-    const worst = worstViolation(nodes, state.area, padding);
-    if (worst <= RESOLVE_TOL + 0.6) break;
-    // shrink harder when the violation is large
-    base = Math.max(24, Math.round(base * (worst > base * 0.15 ? 0.8 : 0.92)));
-    state.nodes.clear(); // reseed at the smaller size
-    if (base === 24 && t >= MAX_TRIES - 2) break;
+  let lo = null;                             // largest size known to fit
+  let hi = null;                             // smallest size known to fail
+  let probe = Math.min(cap, Math.max(12, estimate));
+  let best = null;
+
+  // Phase 1: bracket. Grow while it fits (up to the cap), shrink while it doesn't.
+  for (let t = 0; t < 9; t++) {
+    const r = attempt(probe, padding, margin, SEARCH_ITER, seed);
+    if (r.ok) {
+      if (!best || r.base > best.base) best = r;
+      lo = r.base;
+      if (probe >= cap) break;               // capped by the user's max
+      probe = Math.min(cap, Math.round(probe * 1.45));
+      if (lo >= cap) break;
+    } else {
+      hi = r.base;
+      if (lo !== null) break;                // bracketed: lo fits, hi fails
+      probe = Math.round(probe * 0.7);
+      if (probe < 12) break;
+    }
   }
 
-  const finalWorst = worstViolation(nodes, state.area, padding);
-  if (finalWorst > RESOLVE_TOL + 0.6) {
-    // Even the minimum size couldn't separate everything — tell the user
-    // instead of silently showing an overlapping layout.
-    setHint('Area too small for this logo set — enlarge the area or reduce padding/scales.');
-  } else if (base !== requested) {
-    $('baseSize').value = base;
-    $('baseSizeOut').textContent = base;
-    setHint(`Base size auto-reduced to ${base}px so everything fits without overlap.`);
-  } else {
-    setHint(DEFAULT_HINT);
+  // Phase 2: bisect the bracket to squeeze out the remaining headroom.
+  if (lo !== null && hi !== null) {
+    for (let t = 0; t < 7 && hi - lo > Math.max(2, lo * 0.015); t++) {
+      const mid = Math.round((lo + hi) / 2);
+      const r = attempt(mid, padding, margin, SEARCH_ITER, seed, 3);
+      if (r.ok) { lo = mid; best = r; } else { hi = mid; }
+    }
   }
+
+  if (!best) {
+    // Nothing fits, even at the floor — say so instead of drawing overlap.
+    best = attempt(12, padding, margin, FINAL_ITER, seed);
+    state.effectiveBase = best.base; // don't leave a stale size from a prior run
+    state.placed = best.nodes;
+    best.nodes.forEach((n) => state.nodes.set(n.logo.id, { x: n.x, y: n.y }));
+    setHint('Area too small for this logo set — enlarge the area or reduce padding.');
+    redraw();
+    return;
+  }
+
+  // Phase 3: re-pack the winner at full quality, then even out the gaps.
+  let finalRun = attempt(best.base, padding, margin, FINAL_ITER, seed, 4);
+  if (!finalRun.ok) finalRun = best; // keep the search result if the retry regressed
+  const nodes = finalRun.nodes;
+
+  // Push into leftover space so gaps even out. Try the most aggressive target
+  // first and fall back — spread() restores its snapshot if a target can't be
+  // re-resolved, so an over-ambitious attempt costs time, never correctness.
+  const meanR = nodes.reduce((s, n) => s + n.r, 0) / nodes.length;
+  for (const k of [1.4, 0.8, 0.4]) {
+    const before = nodes.map((n) => ({ x: n.x, y: n.y }));
+    spread(nodes, state.area, padding, padding + meanR * k, { margin, seed, iterations: 170 });
+    if (nodes.some((n, i) => n.x !== before[i].x || n.y !== before[i].y)) break;
+  }
+
+  state.effectiveBase = finalRun.base;
+  const fill = coveragePercent(nodes);
+  setHint(
+    finalRun.base >= cap
+      ? `Logo size ${finalRun.base}px (at your max) · ${fill}% of the area filled.`
+      : `Logo size ${finalRun.base}px — largest that fits · ${fill}% of the area filled.`,
+  );
 
   nodes.forEach((n) => state.nodes.set(n.logo.id, { x: n.x, y: n.y }));
   state.placed = nodes;
   redraw();
 }
 
-function doAutoFit() {
+// Share of the area's usable space taken up by opaque logo footprint.
+function coveragePercent(nodes) {
+  const areaPx = state.area.mask.reduce((s, v) => s + v, 0) / (state.area.scale * state.area.scale);
+  if (!areaPx) return 0; // fully transparent mask — avoid dividing by zero
+  const ink = nodes.reduce((s, n) => {
+    const ds = n.displayW / n.logo.w;
+    return s + n.logo.opaqueFrac * n.logo.w * n.logo.h * ds * ds;
+  }, 0);
+  return Math.round((ink / areaPx) * 100);
+}
+
+function doShuffle() {
   if (!state.area || !state.logos.length) return;
-  const items = state.logos.map((l) => ({
-    maxSide: Math.max(l.w, l.h),
-    footprintRadius: l.footprintRadius,
-    scale: l.scale,
-  }));
-  const B = autoFitBaseSize(items, state.area, Number($('padding').value));
-  $('baseSize').value = B;
-  $('baseSizeOut').textContent = B;
-  state.nodes.clear(); // fresh seed for a clean fit
+  state.seed = (state.seed * 7919 + 13) % 100000;
+  state.nodes.clear();
   repack();
 }
 
@@ -315,13 +389,13 @@ $('polyClear').addEventListener('click', () => { state.spec.polygon = []; state.
 $('maskFile').addEventListener('change', (e) => { if (e.target.files[0]) loadMask(e.target.files[0]); });
 $('logoFiles').addEventListener('change', (e) => addLogoFiles([...e.target.files]));
 
-bindSlider('baseSize', 'baseSizeOut', repack);
-bindSlider('padding', 'paddingOut', repack);
-bindSlider('centerPull', 'centerPullOut', repack);
+bindSlider('baseSize', 'baseSizeOut', arrange);
+bindSlider('padding', 'paddingOut', arrange);
+bindSlider('edgeMargin', 'edgeMarginOut', arrange);
 bindSlider('exportScale', 'exportScaleOut');
 
-$('pack').addEventListener('click', repack);
-$('autofit').addEventListener('click', doAutoFit);
+$('pack').addEventListener('click', arrange);
+$('shuffle').addEventListener('click', () => arrange(doShuffle));
 $('showArea').addEventListener('change', redraw);
 $('whiteBg').addEventListener('change', redraw);
 $('download').addEventListener('click', () => {
@@ -333,6 +407,22 @@ $('download').addEventListener('click', () => {
 });
 
 function clampDim(v) { return Math.max(100, Math.min(4000, Number(v) || 800)); }
+
+// The size search runs several packs, so yield a frame to paint the status
+// first — otherwise the UI just appears to freeze.
+let arranging = false;
+function arrange(job) {
+  if (arranging || !state.logos.length) return;
+  arranging = true;
+  setHint('Arranging…');
+  // setTimeout, not requestAnimationFrame — rAF never fires in a background
+  // tab, which would leave the app stuck on "Arranging…".
+  setTimeout(() => {
+    try { (typeof job === 'function' ? job : repack)(); }
+    catch (err) { console.error(err); setHint('Arrange failed — see console.'); }
+    finally { arranging = false; }
+  }, 16);
+}
 
 // ---------------- Init ----------------
 setAreaType('rect');

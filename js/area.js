@@ -27,6 +27,11 @@ export function buildArea(spec) {
   const dist = distanceTransform(mask, gw, gh); // grid-unit distance to outside
 
   const invScale = 1 / scale;
+  // Deepest interior point. Doubles as the escape target for anywhere the
+  // distance field is flat (e.g. the hole of a donut-shaped mask, where the
+  // gradient is exactly zero and nothing could otherwise push a logo out).
+  const anchor = deepestPoint(dist, gw, gh, invScale);
+
   const area = {
     type: spec.type,
     width,
@@ -60,12 +65,22 @@ export function buildArea(spec) {
       const gy = y * scale;
       const dx = sampleBilinear(dist, gw, gh, gx + 1, gy) - sampleBilinear(dist, gw, gh, gx - 1, gy);
       const dy = sampleBilinear(dist, gw, gh, gx, gy + 1) - sampleBilinear(dist, gw, gh, gx, gy - 1);
-      const m = Math.hypot(dx, dy) || 1;
-      return { x: dx / m, y: dy / m };
+      const m = Math.hypot(dx, dy);
+      if (m > 1e-6) return { x: dx / m, y: dy / m };
+      // Flat field — well outside the shape, or in an enclosed hole. Head for
+      // the deepest interior point instead of returning a zero push.
+      const vx = anchor.x - x, vy = anchor.y - y;
+      const vm = Math.hypot(vx, vy);
+      return vm > 1e-6 ? { x: vx / vm, y: vy / vm } : { x: 1, y: 0 };
     },
   };
 
+  area.anchor = anchor;
   area.centroid = computeCentroid(mask, gw, gh, invScale);
+  // A concave mask (donut, horseshoe, crescent) can have its pixel centroid
+  // outside the fillable region. Seeding there would strand every logo in a
+  // dead zone, so fall back to the deepest interior point.
+  if (!area.inside(area.centroid.x, area.centroid.y)) area.centroid = { ...anchor };
   area.maxDist = maxOf(dist) * invScale;
   return area;
 }
@@ -182,6 +197,13 @@ function computeCentroid(mask, gw, gh, invScale) {
       if (mask[y * gw + x]) { sx += x; sy += y; n++; }
   if (!n) return { x: (gw / 2) * invScale, y: (gh / 2) * invScale };
   return { x: (sx / n) * invScale, y: (sy / n) * invScale };
+}
+
+// Interior point furthest from any border, in logical px.
+function deepestPoint(dist, gw, gh, invScale) {
+  let best = 0, bi = 0;
+  for (let i = 0; i < dist.length; i++) if (dist[i] > best) { best = dist[i]; bi = i; }
+  return { x: ((bi % gw) + 0.5) * invScale, y: (Math.floor(bi / gw) + 0.5) * invScale };
 }
 
 function maxOf(arr) {
